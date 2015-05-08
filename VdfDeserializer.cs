@@ -51,9 +51,10 @@ namespace NeXt.Vdf
         /// <returns></returns>
         public static VdfDeserializer FromFile(string filePath)
         {
-            var reader = new StreamReader(filePath);
-
-            return new VdfDeserializer(reader.ReadToEnd());
+            using (var reader = new StreamReader(filePath))
+            {
+                return new VdfDeserializer(reader.ReadToEnd());
+            }            
         }
 
         private string VdfText;

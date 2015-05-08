@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System;
+using System.Text;
 using System.IO;
 using System.Globalization;
 
@@ -9,8 +10,6 @@ namespace NeXt.Vdf
     /// </summary>
     public class VdfSerializer
     {
-        private delegate void OnStep(string text);
-
         /// <summary>
         /// Creates a VdfSerializer object
         /// </summary>
@@ -20,17 +19,32 @@ namespace NeXt.Vdf
             root = value;
         }
 
+        private const string Newline = "\r\n";
+        private const string ValueDelimiter = "\"";
+        private const string CommentDelimiter = "//";
+        private const string TableOpen = "{";
+        private const string TableClose = "}";
+        private const string KVSeperator = "\t";
+        private string IndentString
+        {
+            get
+            {
+                return "\t".Repeat(indentLevel);
+            }
+        }
+
+
         private VdfValue root;
         private int indentLevel = 0;
 
         private string EscapeString(string v)
         {
-            return v.Replace("\\", @"\\").Replace("\t", @"\t").Replace("\n", @"\n").Replace("\"", @"\""");
+            return v.Replace("\\", @"\\").Replace("\t", @"\t").Replace("\n", @"\n").Replace("\r",@"\r").Replace("\"", @"\""");
         }
 
-        private void WriteString(OnStep step, string text, bool escape)
+        private void WriteString(Action<string> step, string text, bool escape)
         {
-            step("\"");
+            step(ValueDelimiter);
             if(escape)
             {
                 step(EscapeString(text));
@@ -39,70 +53,65 @@ namespace NeXt.Vdf
             {
                 step(text);
             }
-            step("\"");
+            step(ValueDelimiter);
         }
-
-        private void WriteToken(OnStep step,  string value)
-        {
-            step("[$");
-            step(EscapeString(value));
-            step("]");
-        }
-
-        private void RunSerialization(OnStep onStep, VdfValue current)
+        
+        private void RunSerialization(Action<string> onStep, VdfValue current)
         {
             if(current.Comments.Count > 0)
             {
                 foreach(var s in current.Comments)
                 {
-                    onStep("  ".Repeat(indentLevel));
-                    onStep("//");
+                    onStep(IndentString);
+                    onStep(CommentDelimiter);
                     onStep(EscapeString(s));
-                    onStep("\n");
+                    onStep(Newline);
                 }
             }
 
-            onStep("  ".Repeat(indentLevel));
+            onStep(IndentString);
             WriteString(onStep, current.Name, true);
             switch(current.Type)
             {
                 case VdfValueType.String:
                 {
-                    onStep(" ");
+                    onStep(KVSeperator);
                     WriteString(onStep, (current as VdfString).Content, true);
   
-                    onStep("\n");
+                    onStep(Newline);
                     break;
                 }
                 case VdfValueType.Integer:
                 {
-                    onStep(" ");
+                    onStep(KVSeperator);
                     WriteString(onStep, (current as VdfInteger).Content.ToString(CultureInfo.InvariantCulture), false);
 
-                    onStep("\n");
+                    onStep(Newline);
                     break;
                 }
                 case VdfValueType.Double:
                 {
-                    onStep(" ");
+                    onStep(KVSeperator);
                     WriteString(onStep, (current as VdfDouble).Content.ToString(CultureInfo.InvariantCulture), false);
-                    onStep("\n");
+                    onStep(Newline);
                     break;
                 }
                 case VdfValueType.Table:
                 {
 
-                    onStep("\n");
-                    onStep("  ".Repeat(indentLevel));
-                    onStep("{\n");
+                    onStep(Newline);
+                    onStep(IndentString);
+                    onStep(TableOpen);
+                    onStep(Newline);
                     indentLevel++;
                     foreach(var v in current as VdfTable)
                     {
                         RunSerialization(onStep, v);
                     }
                     indentLevel--;
-                    onStep("  ".Repeat(indentLevel));
-                    onStep("}\n");
+                    onStep(IndentString);
+                    onStep(TableClose);
+                    onStep(Newline);
                     break;
                 }
             }
@@ -126,7 +135,7 @@ namespace NeXt.Vdf
         /// <param name="filePath">full path to the file to serialize into</param>
         public void Serialize(string filePath)
         {
-            Serialize(filePath, Encoding.UTF8);
+            Serialize(filePath, Encoding.Unicode);
         }
 
         /// <summary>
@@ -136,8 +145,11 @@ namespace NeXt.Vdf
         /// <param name="encoding"></param>
         public void Serialize(string filePath, Encoding encoding)
         {
-            StreamWriter writer = new StreamWriter(filePath, false, encoding);
-            RunSerialization((s) => writer.Write(s), root);
+            using(StreamWriter writer = new StreamWriter(filePath, false, encoding))       
+            {
+                RunSerialization(writer.Write, root);
+                writer.Flush();
+            }            
         }
     }
 }
